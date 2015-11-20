@@ -1,0 +1,46 @@
+PROJECT_PATH = '/opt/name/builddir'
+
+
+def build_service(branch_name, commit_hash, docker_hub_push):
+    service_path = PROJECT_PATH
+    compose_path = os.path.join(service_path, 'docker-compose.yml')
+
+    if os.path.isdir(service_path):
+        with open(compose_path) as yaml_file:
+            compose = yaml.load(yaml_file)
+
+        service_name = compose[compose.keys()[0]]['container_name']
+        dprint("service name is {}".format(service_name))
+        container_info = json.load(os.popen('/usr/bin/docker inspect {}'.format(service_name)))
+        dprint(container_info, pretty=True)
+        if container_info:
+            image_name = container_info[0]['Image']
+            dprint('image name: {}'.format(image_name))
+            dprint('stopping: {}'.format(service_path))
+
+        dprint('Stopping active container service')
+        os.system('/usr/bin/docker-compose -f {} kill'.format(compose_path))
+        dprint('destroying {}'.format(service_path))
+        os.system('/usr/bin/docker-compose -f {} rm -f'.format(compose_path))
+
+        if container_info:
+            dprint('removing old image: {}'.format(image_name))
+            os.system('/usr/bin/docker rmi -f {}'.format(image_name))
+        os.system('rm -rf {}'.format(service_path))
+
+    os.mkdir(service_path)
+
+    #dprint('Cloning repo')
+    os.system('/usr/bin/git clone -b {} {} {}'.format(branch, REPO, service_path))
+    #Deleting branch from VM repo
+    #Insert if check for branch here
+    os.system('git --git-dir=/root/repos/server.git branch | if grep -q {}; then git --git-dir=/root/repos/server.git branch -D {}; fi'.format(branch, branch))
+    #os.system('git --git-dir=/root/repos/server.git branch -D {}'.format(branch))
+
+    dprint('rebuilding {}'.format(service_path))
+    os.system('/usr/bin/docker-compose -f {} up -d'.format(compose_path))
+
+    if docker_hub_push:
+        ship_to_docker_hub(branch_name, commit_hash)
+
+    return True
